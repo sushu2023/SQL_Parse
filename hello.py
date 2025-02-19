@@ -1,4 +1,4 @@
-import sqlparse
+import sqlglot
 import pandas as pd
 
 # 示例 SQL
@@ -23,32 +23,25 @@ FROM
 """
 
 # 解析 SQL
-parsed = sqlparse.parse(sql)[0]
+parsed = sqlglot.parse_one(sql)
 
 # 提取 SELECT 列
 columns = []
-for token in parsed.tokens:
-    if isinstance(token, sqlparse.sql.IdentifierList):
-        for identifier in token.get_identifiers():
-            # 手动解析字段和别名
-            parts = str(identifier).split(" AS ")
-            if len(parts) == 2:
-                real_name = parts[0].strip()
-                alias = parts[1].strip()
-            else:
-                real_name = str(identifier).strip()
-                alias = None
-            
-            # 获取来源表或子查询
-            source = "t0" if "." in real_name else None
-            columns.append({
-                "alias": alias,
-                "real_name": real_name,
-                "source": source
-            })
+for select_expr in parsed.find_all(sqlglot.expressions.Select):
+    for column in select_expr.expressions:
+        alias = column.alias  # 获取别名
+        real_name = column.this.sql() if hasattr(column, "this") else str(column)
+        source = column.find_ancestor(sqlglot.expressions.Table).alias_or_name if column.find_ancestor(sqlglot.expressions.Table) else None
+        processing = column.sql() if isinstance(column, sqlglot.expressions.Cast) else None
+        columns.append({
+            "alias": alias,
+            "real_name": real_name,
+            "source": source,
+            "processing": processing
+        })
 
 # 导出到 Excel
 df = pd.DataFrame(columns)
-df.to_excel("sql_analysis.xlsx", index=False)
+df.to_excel("sql_analysis_sqlglot.xlsx", index=False)
 
-print("SQL 分析完成，结果已导出到 sql_analysis.xlsx")
+print("SQL 分析完成，结果已导出到 sql_analysis_sqlglot.xlsx")
